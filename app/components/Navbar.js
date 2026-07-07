@@ -9,13 +9,18 @@ export default function Navbar() {
   const [user, setUser] = useState(null)
 
   useEffect(() => {
-    const stored = localStorage.getItem('user')
-    if (stored) setUser(JSON.parse(stored))
+    const checkUser = () => {
+      const stored = localStorage.getItem('user')
+      if (stored) setUser(JSON.parse(stored))
+      else setUser(null)
+    }
+    checkUser()
   }, [])
 
   const handleLogout = () => {
     localStorage.removeItem('user')
     localStorage.removeItem('token')
+    setUser(null)
     router.push('/')
   }
 
@@ -26,23 +31,24 @@ export default function Navbar() {
           <span className="text-2xl font-bold gradient-text">እቁብ</span>
         </Link>
 
-        {user ? (
-          <div className="flex items-center gap-4">
-            <span className="text-sm text-gray-300 hidden md:block">
-              👋 {user.full_name}
-            </span>
-            <button
-              onClick={handleLogout}
-              className="text-sm text-gray-400 hover:text-white transition"
-            >
-              Logout
-            </button>
-          </div>
-        ) : (
-          <Link href="/">
-            <button className="btn-primary text-sm">Get Started</button>
-          </Link>
-        )}
+        <div className="flex items-center gap-4">
+          {user ? (
+            <>
+              <span className="text-sm text-gray-300 hidden md:block">
+                👋 {user.full_name}
+              </span>
+              <button
+                onClick={handleLogout}
+                className="text-sm text-gray-400 hover:text-white transition"
+              >
+                Logout
+              </button>
+            </>
+          ) : (
+            // Show nothing when logged out
+            <span className="text-sm text-gray-500">Welcome</span>
+          )}
+        </div>
       </div>
     </nav>
   )
