@@ -14,7 +14,6 @@ export default function InviteModal({ groupId, onClose, onInvite }) {
     setError('')
     setLoading(true)
 
-    // Basic email validation
     if (!email || !email.includes('@')) {
       setError('Please enter a valid email address')
       setLoading(false)
@@ -26,7 +25,6 @@ export default function InviteModal({ groupId, onClose, onInvite }) {
       setSuccess(true)
       onInvite?.()
       
-      // Close after 2 seconds
       setTimeout(() => {
         onClose()
       }, 2000)
@@ -37,19 +35,9 @@ export default function InviteModal({ groupId, onClose, onInvite }) {
     }
   }
 
-  // Close modal on Escape key
-  useState(() => {
-    const handleEscape = (e) => {
-      if (e.key === 'Escape') onClose()
-    }
-    document.addEventListener('keydown', handleEscape)
-    return () => document.removeEventListener('keydown', handleEscape)
-  }, [onClose])
-
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
       <div className="glass-card max-w-md w-full p-6 relative">
-        {/* Close button */}
         <button
           onClick={onClose}
           className="absolute top-4 right-4 text-gray-400 hover:text-white transition text-xl"
@@ -57,7 +45,6 @@ export default function InviteModal({ groupId, onClose, onInvite }) {
           ✕
         </button>
 
-        {/* Header */}
         <div className="mb-6">
           <h2 className="text-2xl font-bold gradient-text">Invite Member</h2>
           <p className="text-gray-400 text-sm mt-1">

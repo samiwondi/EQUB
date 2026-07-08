@@ -2,61 +2,55 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { authService } from './services/authService'
 
 export default function HomePage() {
   const router = useRouter()
   const [isLogin, setIsLogin] = useState(true)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
   const [formData, setFormData] = useState({
+    fayda_id: '',
     email: '',
     password: '',
     full_name: '',
     phone: '',
     role: 'member'
   })
-  const [error, setError] = useState('')
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value })
   }
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
-    
-    if (isLogin) {
-      const mockUser = {
-        id: 1,
-        full_name: 'Abebe Kebede',
-        email: formData.email,
-        role: 'member',
-        phone: '+251 9XX XXX XXX',
-        joinDate: 'Jan 2024',
-        groupsJoined: 3,
-        totalSaved: 'ETB 12,500'
+    setError('')
+    setLoading(true)
+
+    try {
+      if (isLogin) {
+        await authService.login(formData.email, formData.password)
+      } else {
+        await authService.register({
+          fayda_id: formData.fayda_id,
+          full_name: formData.full_name,
+          email: formData.email,
+          password: formData.password,
+          phone: formData.phone,
+          role: formData.role
+        })
       }
-      localStorage.setItem('user', JSON.stringify(mockUser))
-      localStorage.setItem('token', 'mock-token')
       router.push('/dashboard')
-    } else {
-      const mockUser = {
-        id: 1,
-        full_name: formData.full_name,
-        email: formData.email,
-        role: formData.role,
-        phone: formData.phone || '+251 9XX XXX XXX',
-        joinDate: 'Dec 2024',
-        groupsJoined: 0,
-        totalSaved: 'ETB 0'
-      }
-      localStorage.setItem('user', JSON.stringify(mockUser))
-      localStorage.setItem('token', 'mock-token')
-      router.push('/dashboard')
+    } catch (err) {
+      setError(err.response?.data?.message || 'Authentication failed. Please try again.')
+    } finally {
+      setLoading(false)
     }
   }
 
   return (
     <div className="auth-bg flex items-center justify-center px-4 py-12">
       <div className="w-full max-w-6xl grid md:grid-cols-2 gap-8 items-center">
-        {/* Left Side - Brand */}
         <div className="space-y-6 animate-fade-in">
           <div className="space-y-2">
             <h1 className="text-5xl md:text-6xl font-bold">
@@ -80,9 +74,7 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* Right Side - Auth Form */}
         <div className="glass-card animate-fade-in" style={{ animationDelay: '0.2s' }}>
-          {/* Toggle */}
           <div className="flex gap-2 bg-[#0a1628]/50 p-1 rounded-xl mb-6">
             <button
               className={`flex-1 py-2 px-4 rounded-lg transition ${
@@ -105,6 +97,18 @@ export default function HomePage() {
           <form onSubmit={handleSubmit} className="space-y-4">
             {!isLogin && (
               <>
+                <div>
+                  <label className="block text-gray-300 mb-1 text-sm">Fayda ID *</label>
+                  <input
+                    type="text"
+                    name="fayda_id"
+                    value={formData.fayda_id}
+                    onChange={handleChange}
+                    className="input-field"
+                    placeholder="FID-1234567890"
+                    required={!isLogin}
+                  />
+                </div>
                 <div>
                   <label className="block text-gray-300 mb-1 text-sm">Full Name</label>
                   <input
@@ -178,8 +182,8 @@ export default function HomePage() {
               </div>
             )}
 
-            <button type="submit" className="btn-primary w-full text-lg">
-              {isLogin ? 'Sign In' : 'Create Account'}
+            <button type="submit" className="btn-primary w-full text-lg" disabled={loading}>
+              {loading ? 'Loading...' : (isLogin ? 'Sign In' : 'Create Account')}
             </button>
           </form>
 

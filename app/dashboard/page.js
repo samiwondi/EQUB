@@ -1,10 +1,12 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import Sidebar from '../components/Sidebar'
 import GroupFeed from '../components/GroupFeed'
 
 export default function DashboardPage() {
+  const router = useRouter()
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
 
@@ -12,9 +14,11 @@ export default function DashboardPage() {
     const stored = localStorage.getItem('user')
     if (stored) {
       setUser(JSON.parse(stored))
+    } else {
+      router.push('/')
     }
     setLoading(false)
-  }, [])
+  }, [router])
 
   if (loading) {
     return (
@@ -41,7 +45,6 @@ export default function DashboardPage() {
   return (
     <div className="max-w-7xl mx-auto px-4 py-6">
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        {/* Left Sidebar - Quick Links */}
         <div className="hidden md:block">
           <div className="glass-card">
             <div className="space-y-2">
@@ -55,12 +58,10 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Main Feed */}
         <div className="md:col-span-2">
           <GroupFeed />
         </div>
 
-        {/* Right Sidebar - User Details */}
         <div className="md:col-span-1">
           <Sidebar />
         </div>

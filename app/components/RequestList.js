@@ -6,7 +6,7 @@ import { groupService } from '../services/groupService'
 export default function RequestList({ groupId, isCreator, onUpdate }) {
   const [requests, setRequests] = useState([])
   const [loading, setLoading] = useState(true)
-  const [processing, setProcessing] = useState(null) // Track which request is being processed
+  const [processing, setProcessing] = useState(null)
 
   useEffect(() => {
     if (isCreator) {
@@ -21,11 +21,7 @@ export default function RequestList({ groupId, isCreator, onUpdate }) {
       setRequests(res.data || [])
     } catch (error) {
       console.error('Failed to fetch requests:', error)
-      // Fallback to mock data if API not ready
-      setRequests([
-        { userId: 2, full_name: 'Abebe Kebede', email: 'abebe@email.com', message: 'I want to join!' },
-        { userId: 3, full_name: 'Tigist Desta', email: 'tigist@email.com', message: 'My friend is in this group' },
-      ])
+      setRequests([])
     } finally {
       setLoading(false)
     }
@@ -57,7 +53,6 @@ export default function RequestList({ groupId, isCreator, onUpdate }) {
     }
   }
 
-  // Don't show if user is not creator
   if (!isCreator) return null
 
   return (
@@ -80,43 +75,48 @@ export default function RequestList({ groupId, isCreator, onUpdate }) {
         </div>
       ) : (
         <div className="space-y-3 max-h-96 overflow-y-auto pr-2">
-          {requests.map((req) => (
-            <div 
-              key={req.userId} 
-              className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 p-4 bg-[#0a1628] rounded-lg border border-[#1a2f57] hover:border-[#2c5085] transition"
-            >
-              <div className="flex-1">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-gradient-to-r from-[#23406e] to-[#2c5085] flex items-center justify-center text-sm font-bold text-white flex-shrink-0">
-                    {req.full_name?.charAt(0) || 'U'}
-                  </div>
-                  <div>
-                    <p className="font-medium">{req.full_name || 'Unknown User'}</p>
-                    <p className="text-xs text-gray-400">{req.email || 'No email'}</p>
-                    {req.message && (
-                      <p className="text-xs text-gray-500 italic mt-1">"{req.message}"</p>
-                    )}
+          {requests.map((req) => {
+            // Get user data from the nested User object
+            const user = req.User || {}
+            const userId = req.user_id || user.id
+            const fullName = user.full_name || 'Unknown User'
+            const email = user.email || 'No email'
+
+            return (
+              <div 
+                key={req.id || userId} 
+                className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 p-4 bg-[#0a1628] rounded-lg border border-[#1a2f57] hover:border-[#2c5085] transition"
+              >
+                <div className="flex-1">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-r from-[#23406e] to-[#2c5085] flex items-center justify-center text-sm font-bold text-white flex-shrink-0">
+                      {fullName.charAt(0) || 'U'}
+                    </div>
+                    <div>
+                      <p className="font-medium">{fullName}</p>
+                      <p className="text-xs text-gray-400">{email}</p>
+                    </div>
                   </div>
                 </div>
+                <div className="flex gap-2 w-full sm:w-auto">
+                  <button
+                    onClick={() => handleApprove(userId)}
+                    disabled={processing === userId}
+                    className="flex-1 sm:flex-none bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg text-sm font-medium transition"
+                  >
+                    {processing === userId ? 'Processing...' : '✅ Approve'}
+                  </button>
+                  <button
+                    onClick={() => handleDeny(userId)}
+                    disabled={processing === userId}
+                    className="flex-1 sm:flex-none bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg text-sm font-medium transition"
+                  >
+                    {processing === userId ? '...' : '❌ Deny'}
+                  </button>
+                </div>
               </div>
-              <div className="flex gap-2 w-full sm:w-auto">
-                <button
-                  onClick={() => handleApprove(req.userId)}
-                  disabled={processing === req.userId}
-                  className="flex-1 sm:flex-none bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg text-sm font-medium transition"
-                >
-                  {processing === req.userId ? 'Processing...' : '✅ Approve'}
-                </button>
-                <button
-                  onClick={() => handleDeny(req.userId)}
-                  disabled={processing === req.userId}
-                  className="flex-1 sm:flex-none bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg text-sm font-medium transition"
-                >
-                  {processing === req.userId ? '...' : '❌ Deny'}
-                </button>
-              </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
     </div>

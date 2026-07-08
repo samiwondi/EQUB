@@ -1,100 +1,72 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
+import { groupService } from '../services/groupService'
 
 export default function GroupFeed() {
-  const [groups] = useState([
-    {
-      id: 1,
-      name: 'Family Savings Circle',
-      description: 'Monthly savings for family members to support each other',
-      members: 8,
-      maxMembers: 10,
-      contribution: 1000,
-      frequency: 'Monthly',
-      category: 'Family',
-      status: 'open',
-      createdBy: 'Abebe',
-      createdAt: 'Nov 1, 2024',
-      image: '👨‍👩‍👧‍👦',
-      nextPayout: 'Dec 25, 2024'
-    },
-    {
-      id: 2,
-      name: 'Workplace Growth Fund',
-      description: 'Colleagues saving together for professional development',
-      members: 12,
-      maxMembers: 15,
-      contribution: 500,
-      frequency: 'Weekly',
-      category: 'Professional',
-      status: 'open',
-      createdBy: 'Kebede',
-      createdAt: 'Oct 15, 2024',
-      image: '💼',
-      nextPayout: 'Jan 15, 2025'
-    },
-    {
-      id: 3,
-      name: 'Neighborhood United',
-      description: 'Community savings for neighborhood improvements',
-      members: 15,
-      maxMembers: 20,
-      contribution: 2000,
-      frequency: 'Monthly',
-      category: 'Community',
-      status: 'full',
-      createdBy: 'Tigist',
-      createdAt: 'Sep 1, 2024',
-      image: '🏘️',
-      nextPayout: 'Feb 1, 2025'
-    },
-    {
-      id: 4,
-      name: "Women's Empowerment Group",
-      description: 'Supporting women entrepreneurs through savings',
-      members: 6,
-      maxMembers: 8,
-      contribution: 300,
-      frequency: 'Bi-weekly',
-      category: 'Women',
-      status: 'open',
-      createdBy: 'Meron',
-      createdAt: 'Nov 20, 2024',
-      image: '👩‍💼',
-      nextPayout: 'Dec 30, 2024'
-    },
-    {
-      id: 5,
-      name: 'Youth Innovation Fund',
-      description: 'Young professionals saving for startup ideas',
-      members: 4,
-      maxMembers: 6,
-      contribution: 1500,
-      frequency: 'Monthly',
-      category: 'Youth',
-      status: 'pending',
-      createdBy: 'Yohannes',
-      createdAt: 'Dec 1, 2024',
-      image: '🚀',
-      nextPayout: 'Mar 1, 2025'
-    },
-  ])
-
+  const [groups, setGroups] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('all')
+  const [user, setUser] = useState(null)
+
+  useEffect(() => {
+    const stored = localStorage.getItem('user')
+    if (stored) setUser(JSON.parse(stored))
+  }, [])
+
+  useEffect(() => {
+    fetchGroups()
+  }, [search, filter])
+
+  const fetchGroups = async () => {
+    try {
+      setLoading(true)
+      setError('')
+      
+      const params = {}
+      if (search) params.search = search
+      if (filter !== 'all') params.privacy = filter
+      
+      const response = await groupService.getGroups(params)
+      setGroups(response.data || [])
+    } catch (err) {
+      console.error('Failed to fetch groups:', err)
+      setError('Failed to load groups. Please try again.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleRequestJoin = async (groupId, message) => {
+    try {
+      await groupService.requestJoin(groupId, { message })
+      alert('Request sent! The group creator will review it.')
+      fetchGroups()
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to send request')
+    }
+  }
 
   const filteredGroups = groups.filter(group => {
-    const matchesSearch = group.name.toLowerCase().includes(search.toLowerCase()) ||
-                          group.description.toLowerCase().includes(search.toLowerCase())
-    const matchesFilter = filter === 'all' || group.status === filter
+    const matchesSearch = group.name?.toLowerCase().includes(search.toLowerCase()) ||
+                          group.description?.toLowerCase().includes(search.toLowerCase())
+    const matchesFilter = filter === 'all' || group.privacy === filter
     return matchesSearch && matchesFilter
   })
 
+  if (loading) {
+    return (
+      <div className="flex justify-center py-12">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-[#c9a84c]"></div>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h2 className="text-2xl font-bold">Open Groups</h2>
@@ -107,7 +79,6 @@ export default function GroupFeed() {
         </Link>
       </div>
 
-      {/* Search & Filter */}
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="flex-1">
           <input
@@ -128,25 +99,30 @@ export default function GroupFeed() {
             All
           </button>
           <button
-            onClick={() => setFilter('open')}
+            onClick={() => setFilter('public')}
             className={`px-4 py-2 rounded-lg text-sm transition ${
-              filter === 'open' ? 'bg-[#16a34a] text-white font-semibold' : 'bg-[#1a2f57] text-gray-300 hover:bg-[#23406e]'
+              filter === 'public' ? 'bg-[#16a34a] text-white font-semibold' : 'bg-[#1a2f57] text-gray-300 hover:bg-[#23406e]'
             }`}
           >
-            Open
+            Public
           </button>
           <button
-            onClick={() => setFilter('full')}
+            onClick={() => setFilter('private')}
             className={`px-4 py-2 rounded-lg text-sm transition ${
-              filter === 'full' ? 'bg-[#dc2626] text-white font-semibold' : 'bg-[#1a2f57] text-gray-300 hover:bg-[#23406e]'
+              filter === 'private' ? 'bg-[#dc2626] text-white font-semibold' : 'bg-[#1a2f57] text-gray-300 hover:bg-[#23406e]'
             }`}
           >
-            Full
+            Private
           </button>
         </div>
       </div>
 
-      {/* Groups Feed */}
+      {error && (
+        <div className="bg-red-900/30 border border-red-700 text-red-300 p-3 rounded-lg text-sm">
+          {error}
+        </div>
+      )}
+
       <div className="space-y-4">
         {filteredGroups.length === 0 ? (
           <div className="glass-card text-center py-12">
@@ -154,72 +130,85 @@ export default function GroupFeed() {
             <p className="text-sm text-gray-500">Try adjusting your search or filters</p>
           </div>
         ) : (
-          filteredGroups.map((group) => (
-            <Link href={`/groups/${group.id}`} key={group.id}>
-              <div className="glass-card hover:border-[#c9a84c] transition cursor-pointer">
-                <div className="flex flex-col md:flex-row gap-4">
-                  {/* Group Icon */}
-                  <div className="text-4xl md:text-5xl flex-shrink-0">
-                    {group.image}
-                  </div>
-
-                  {/* Group Info */}
-                  <div className="flex-1">
-                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-2">
-                      <div>
-                        <h3 className="text-xl font-semibold">{group.name}</h3>
-                        <p className="text-gray-400 text-sm">{group.description}</p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className={`badge ${group.status === 'open' ? 'badge-open' : group.status === 'full' ? 'badge-full' : 'badge-pending'}`}>
-                          {group.status}
-                        </span>
-                        <span className="badge badge-open text-xs bg-[#1a2f57] text-gray-300">
-                          {group.category}
-                        </span>
-                      </div>
+          filteredGroups.map((group) => {
+            const isMember = group.Memberships?.some(m => m.user_id === user?.id)
+            const isPending = group.Memberships?.some(m => m.user_id === user?.id && m.role === 'pending')
+            
+            return (
+              <Link href={`/groups/${group.id}`} key={group.id}>
+                <div className="glass-card hover:border-[#c9a84c] transition cursor-pointer">
+                  <div className="flex flex-col md:flex-row gap-4">
+                    <div className="text-4xl md:text-5xl flex-shrink-0">
+                      {group.category === 'Family' ? '👨‍👩‍👧‍👦' :
+                       group.category === 'Professional' ? '💼' :
+                       group.category === 'Community' ? '🏘️' :
+                       group.category === 'Women' ? '👩‍💼' :
+                       group.category === 'Youth' ? '🚀' : '📌'}
                     </div>
 
-                    {/* Stats */}
-                    <div className="flex flex-wrap gap-4 mt-3 text-sm">
-                      <div className="flex items-center gap-1 text-gray-400">
-                        <span>👥</span>
-                        <span>{group.members}/{group.maxMembers} members</span>
+                    <div className="flex-1">
+                      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-2">
+                        <div>
+                          <h3 className="text-xl font-semibold">{group.name}</h3>
+                          <p className="text-gray-400 text-sm">{group.description}</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className={`badge ${group.status === 'open' || group.status === 'active' ? 'badge-open' : 'badge-pending'}`}>
+                            {group.status}
+                          </span>
+                          <span className="badge badge-open text-xs bg-[#1a2f57] text-gray-300">
+                            {group.privacy === 'public' ? '🌐 Public' : '🔒 Private'}
+                          </span>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-1 text-gray-400">
-                        <span>💰</span>
-                        <span className="text-[#c9a84c] font-semibold">ETB {group.contribution}</span>
-                        <span className="text-gray-500">/{group.frequency}</span>
-                      </div>
-                      <div className="flex items-center gap-1 text-gray-400">
-                        <span>📅</span>
-                        <span>Next: {group.nextPayout}</span>
-                      </div>
-                      <div className="flex items-center gap-1 text-gray-400 text-xs">
-                        <span>👤</span>
-                        <span>By {group.createdBy}</span>
-                      </div>
-                    </div>
 
-                    {/* Join Button */}
-                    {group.status === 'open' && (
-                      <div className="mt-3">
-                        <button 
-                          className="btn-primary text-sm"
-                          onClick={(e) => {
-                            e.preventDefault()
-                            alert(`Joining ${group.name}... (Backend coming soon!)`)
-                          }}
-                        >
-                          + Join Group
-                        </button>
+                      <div className="flex flex-wrap gap-4 mt-3 text-sm">
+                        <div className="flex items-center gap-1 text-gray-400">
+                          <span>👥</span>
+                          <span>{group.member_count || 0}/{group.max_members} members</span>
+                        </div>
+                        <div className="flex items-center gap-1 text-gray-400">
+                          <span>💰</span>
+                          <span className="text-[#c9a84c] font-semibold">ETB {group.contribution_amount}</span>
+                          <span className="text-gray-500">/{group.frequency}</span>
+                        </div>
+                        <div className="flex items-center gap-1 text-gray-400 text-xs">
+                          <span>👤</span>
+                          <span>By {group.creator?.full_name || 'Admin'}</span>
+                        </div>
                       </div>
-                    )}
+
+                      {group.privacy === 'public' && group.status === 'open' && (
+                        <div className="mt-3">
+                          {isMember ? (
+                            <button disabled className="btn-secondary text-sm">✅ Member</button>
+                          ) : isPending ? (
+                            <button disabled className="btn-secondary text-sm">⏳ Awaiting Approval</button>
+                          ) : (
+                            <button 
+                              className="btn-primary text-sm"
+                              onClick={(e) => {
+                                e.preventDefault()
+                                const message = prompt('Optional: Why do you want to join this group?')
+                                handleRequestJoin(group.id, message)
+                              }}
+                            >
+                              Request to Join
+                            </button>
+                          )}
+                        </div>
+                      )}
+                      {group.privacy === 'public' && group.status !== 'open' && (
+                        <div className="mt-3">
+                          <span className="text-sm text-gray-500">🔒 Group is closed for new members</span>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
-            </Link>
-          ))
+              </Link>
+            )
+          })
         )}
       </div>
     </div>

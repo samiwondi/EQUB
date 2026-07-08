@@ -16,7 +16,6 @@ export default function Sidebar() {
 
   return (
     <div className="glass-card sticky top-20">
-      {/* User Profile Card */}
       <div className="text-center border-b border-[#1a2f57] pb-4">
         <div className="w-20 h-20 rounded-full bg-gradient-to-r from-[#c9a84c] to-[#a8893a] flex items-center justify-center text-2xl font-bold text-[#0a1628] mx-auto mb-3">
           {user.full_name?.charAt(0) || 'U'}
@@ -24,12 +23,10 @@ export default function Sidebar() {
         <h3 className="font-semibold">{user.full_name}</h3>
         <p className="text-xs text-gray-400">{user.email}</p>
         <div className="flex justify-center gap-2 mt-2">
-          <span className="badge badge-open text-xs">Member</span>
-          <span className="text-xs text-gray-400">• {user.role}</span>
+          <span className="badge badge-open text-xs">{user.role || 'Member'}</span>
         </div>
       </div>
 
-      {/* Stats */}
       <div className="py-4 border-b border-[#1a2f57]">
         <div className="grid grid-cols-2 gap-2 text-center">
           <div>
@@ -43,7 +40,6 @@ export default function Sidebar() {
         </div>
       </div>
 
-      {/* Quick Actions */}
       <div className="pt-4 space-y-2">
         <button 
           className="btn-primary w-full text-sm"
@@ -51,12 +47,14 @@ export default function Sidebar() {
         >
           + Create Group
         </button>
-        <button className="btn-secondary w-full text-sm">
+        <button 
+          className="btn-secondary w-full text-sm"
+          onClick={() => router.push('/dashboard')}
+        >
           🔍 Find Groups
         </button>
       </div>
 
-      {/* Member Since */}
       <p className="text-xs text-gray-500 text-center mt-4">
         Member since {user.joinDate || 'Dec 2024'}
       </p>

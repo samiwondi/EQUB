@@ -3,23 +3,19 @@
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useState, useEffect } from 'react'
+import { authService } from '../services/authService'
 
 export default function Navbar() {
   const router = useRouter()
   const [user, setUser] = useState(null)
 
   useEffect(() => {
-    const checkUser = () => {
-      const stored = localStorage.getItem('user')
-      if (stored) setUser(JSON.parse(stored))
-      else setUser(null)
-    }
-    checkUser()
+    const stored = localStorage.getItem('user')
+    if (stored) setUser(JSON.parse(stored))
   }, [])
 
   const handleLogout = () => {
-    localStorage.removeItem('user')
-    localStorage.removeItem('token')
+    authService.logout()
     setUser(null)
     router.push('/')
   }
@@ -45,7 +41,6 @@ export default function Navbar() {
               </button>
             </>
           ) : (
-            // Show nothing when logged out
             <span className="text-sm text-gray-500">Welcome</span>
           )}
         </div>

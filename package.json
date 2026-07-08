@@ -8,6 +8,7 @@
     "start": "next start"
   },
   "dependencies": {
+    "axiom": "^0.52.2",
     "axios": "^1.18.1",
     "next": "14.0.4",
     "react": "^18.2.0",
