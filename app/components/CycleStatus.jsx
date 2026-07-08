@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { groupService } from '../services/groupService'
 
-export default function CycleStatus({ groupId, isCreator }) {
+export default function CycleStatus({ groupId, isCreator, onUpdate }) {
   const [cycle, setCycle] = useState(null)
   const [members, setMembers] = useState([])
   const [loading, setLoading] = useState(true)
@@ -31,6 +31,7 @@ export default function CycleStatus({ groupId, isCreator }) {
     try {
       await groupService.drawWinner(groupId)
       alert('Winner drawn!')
+      if (onUpdate) onUpdate()
       fetchCycleStatus()
     } catch (err) {
       alert(err.response?.data?.message || 'Failed to draw winner')
@@ -43,6 +44,7 @@ export default function CycleStatus({ groupId, isCreator }) {
     try {
       await groupService.endCycle(groupId, action)
       alert(`Cycle ${action === 'reform' ? 'reformed' : 'dismantled'} successfully`)
+      if (onUpdate) onUpdate()
       fetchCycleStatus()
     } catch (err) {
       alert(err.response?.data?.message || 'Failed to end cycle')
@@ -65,6 +67,7 @@ export default function CycleStatus({ groupId, isCreator }) {
                 try {
                   await groupService.startCycle(groupId, { start_date: date })
                   alert('Cycle started!')
+                  if (onUpdate) onUpdate()
                   fetchCycleStatus()
                 } catch (err) {
                   alert(err.response?.data?.message || 'Failed to start cycle')
@@ -80,8 +83,8 @@ export default function CycleStatus({ groupId, isCreator }) {
     )
   }
 
-  const totalMembers = members.length
-  const remaining = members.filter(m => !m.has_won).length
+  const activeMembers = members.filter(m => m.active_in_cycle === true)
+  const remaining = activeMembers.filter(m => !m.has_won).length
 
   return (
     <div className="glass-card mt-6">
@@ -99,7 +102,7 @@ export default function CycleStatus({ groupId, isCreator }) {
         </div>
         <div>
           <p className="text-gray-400 text-xs">Members</p>
-          <p className="font-semibold">{totalMembers}</p>
+          <p className="font-semibold">{activeMembers.length}</p>
         </div>
         <div>
           <p className="text-gray-400 text-xs">Remaining</p>
@@ -117,8 +120,13 @@ export default function CycleStatus({ groupId, isCreator }) {
           <div className="space-y-1 max-h-32 overflow-y-auto">
             {cycle.Rounds.map((r) => (
               <div key={r.id} className="flex justify-between text-sm">
-                <span>Round {r.round_number}: {r.winner?.full_name || r.fixedWinner?.full_name || 'Pending'}</span>
-                <span className="text-[#c9a84c]">ETB {r.amount}</span>
+                <span>
+                  Round {r.round_number}:{' '}
+                  {r.winner?.full_name || r.fixedWinner?.full_name || 'Pending'}
+                </span>
+                <span className={r.status === 'paid' ? 'text-green-400' : 'text-yellow-400'}>
+                  {r.status === 'paid' ? '✅ Completed' : '⏳ Pending'}
+                </span>
               </div>
             ))}
           </div>
@@ -126,9 +134,9 @@ export default function CycleStatus({ groupId, isCreator }) {
       )}
 
       <div className="mt-4 pt-4 border-t border-[#1a2f57]">
-        <p className="text-sm text-gray-400 mb-2">Members</p>
+        <p className="text-sm text-gray-400 mb-2">Active Members</p>
         <div className="grid grid-cols-2 gap-1 max-h-40 overflow-y-auto">
-          {members.map((m) => (
+          {activeMembers.map((m) => (
             <div key={m.user_id} className="flex justify-between text-sm">
               <span>{m.User?.full_name || 'Unknown'}</span>
               <span className={m.has_won ? 'text-green-400' : 'text-gray-400'}>

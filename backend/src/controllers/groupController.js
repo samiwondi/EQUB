@@ -26,6 +26,7 @@ const createGroup = async (req, res) => {
       user_id: req.user.id,
       group_id: group.id,
       role: 'admin',
+      active_in_cycle: false,
     });
 
     res.status(201).json({
@@ -39,13 +40,12 @@ const createGroup = async (req, res) => {
 
 const getGroups = async (req, res) => {
   try {
-    const { search, category, privacy, status } = req.query;
+    const { search, category, privacy } = req.query;
 
     const where = {};
     if (search) where.name = { [Op.iLike]: `%${search}%` };
     if (category) where.category = category;
     if (privacy) where.privacy = privacy;
-    if (status) where.status = status;
 
     const groups = await Group.findAll({
       where,
@@ -82,6 +82,7 @@ const getGroup = async (req, res) => {
                 { model: User, as: 'winner', attributes: ['id', 'full_name'] },
                 { model: User, as: 'fixedWinner', attributes: ['id', 'full_name'] },
               ],
+              order: [['round_number', 'ASC']], // <-- FIXED: Rounds now in correct order
             },
           ],
         },
@@ -111,12 +112,16 @@ const requestJoin = async (req, res) => {
     const group = await Group.findByPk(req.params.id);
     if (!group) return res.status(404).json({ message: 'Group not found' });
 
-    if (group.status === 'closed' || group.status === 'completed' || group.status === 'cancelled') {
-      return res.status(400).json({ message: 'Group is not accepting new members' });
-    }
-
     if (group.privacy === 'private') {
       return res.status(400).json({ message: 'Private groups require an invitation' });
+    }
+
+    // Check if group is full
+    const memberCount = await Membership.count({
+      where: { group_id: group.id, role: ['member', 'admin'] },
+    });
+    if (memberCount >= group.max_members) {
+      return res.status(400).json({ message: 'Group is full' });
     }
 
     const existing = await Membership.findOne({
@@ -136,6 +141,8 @@ const requestJoin = async (req, res) => {
       user_id: req.user.id,
       group_id: group.id,
       role: 'pending',
+      active_in_cycle: false,
+      has_won: false,
     }, { transaction: t });
 
     await t.commit();
@@ -166,9 +173,32 @@ const handleRequest = async (req, res) => {
     if (!membership) return res.status(404).json({ message: 'No pending request found' });
 
     if (action === 'approve') {
-      await membership.update({ role: 'member' }, { transaction: t });
+      // Check if group is full before approving
+      const memberCount = await Membership.count({
+        where: { group_id: id, role: ['member', 'admin'] },
+      });
+      if (memberCount >= group.max_members) {
+        return res.status(400).json({ message: 'Group is full. Cannot approve more members.' });
+      }
+
+      // Check if there is an active cycle
+      const activeCycle = await Cycle.findOne({
+        where: { group_id: id, status: 'active' },
+      });
+
+      // New members are added as 'member' but active_in_cycle = false if cycle active
+      await membership.update({
+        role: 'member',
+        active_in_cycle: activeCycle ? false : true,
+        has_won: false,
+      }, { transaction: t });
+
       await t.commit();
-      res.json({ message: 'Request approved successfully' });
+      res.json({
+        message: activeCycle
+          ? 'Request approved. User will join the next cycle.'
+          : 'Request approved. User can participate immediately.',
+      });
     } else if (action === 'deny') {
       await membership.destroy({ transaction: t });
       await t.commit();
@@ -182,18 +212,12 @@ const handleRequest = async (req, res) => {
   }
 };
 
-// ===============================
-// PENDING REQUESTS (NEW)
-// ===============================
-
 const getPendingRequests = async (req, res) => {
   try {
     const { id } = req.params;
 
     const group = await Group.findByPk(id);
-    if (!group) {
-      return res.status(404).json({ message: 'Group not found' });
-    }
+    if (!group) return res.status(404).json({ message: 'Group not found' });
 
     if (group.created_by !== req.user.id) {
       return res.status(403).json({ message: 'Only the group creator can view pending requests' });
@@ -211,7 +235,7 @@ const getPendingRequests = async (req, res) => {
 };
 
 // ===============================
-// INVITES
+// INVITES (Private groups)
 // ===============================
 
 const inviteUser = async (req, res) => {
@@ -229,6 +253,14 @@ const inviteUser = async (req, res) => {
 
     const user = await User.findOne({ where: { email } });
     if (!user) return res.status(404).json({ message: 'User not found' });
+
+    // Check group capacity
+    const memberCount = await Membership.count({
+      where: { group_id: id, role: ['member', 'admin'] },
+    });
+    if (memberCount >= group.max_members) {
+      return res.status(400).json({ message: 'Group is full' });
+    }
 
     const existing = await Membership.findOne({
       where: { user_id: user.id, group_id: id },
@@ -256,12 +288,106 @@ const inviteUser = async (req, res) => {
       user_id: user.id,
       group_id: id,
       role: 'invited',
+      active_in_cycle: false,
+      has_won: false,
     }, { transaction: t });
 
     await t.commit();
     res.status(201).json({ message: 'Invitation sent successfully', invite });
   } catch (error) {
     await t.rollback();
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// ===============================
+// CONTRIBUTIONS
+// ===============================
+
+const contribute = async (req, res) => {
+  const t = await sequelize.transaction();
+  try {
+    const { id } = req.params;
+    const { payment_method } = req.body;
+
+    const group = await Group.findByPk(id);
+    if (!group) return res.status(404).json({ message: 'Group not found' });
+
+    const membership = await Membership.findOne({
+      where: { user_id: req.user.id, group_id: id, role: ['member', 'admin'] },
+    });
+    if (!membership) return res.status(403).json({ message: 'You are not a member of this group' });
+
+    if (!membership.active_in_cycle) {
+      return res.status(400).json({ message: 'You are not active in the current cycle' });
+    }
+
+    const cycle = await Cycle.findOne({
+      where: { group_id: id, status: 'active' },
+    });
+    if (!cycle) return res.status(400).json({ message: 'No active cycle found' });
+
+    const existingContribution = await Contribution.findOne({
+      where: {
+        user_id: req.user.id,
+        group_id: id,
+        cycle_id: cycle.id,
+        round_number: cycle.current_round,
+      },
+    });
+    if (existingContribution) {
+      return res.status(400).json({ message: 'You have already contributed for this round' });
+    }
+
+    const fixedAmount = group.contribution_amount;
+
+    const contribution = await Contribution.create({
+      user_id: req.user.id,
+      group_id: id,
+      cycle_id: cycle.id,
+      round_number: cycle.current_round,
+      amount: fixedAmount,
+      status: 'paid',
+      payment_method: payment_method || 'cash',
+      paid_at: new Date(),
+    }, { transaction: t });
+
+    await t.commit();
+
+    res.status(201).json({
+      message: 'Contribution submitted successfully',
+      contribution,
+    });
+  } catch (error) {
+    await t.rollback();
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// ===============================
+// LEAVE GROUP
+// ===============================
+
+const leaveGroup = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const group = await Group.findByPk(id);
+    if (!group) return res.status(404).json({ message: 'Group not found' });
+
+    const membership = await Membership.findOne({
+      where: {
+        user_id: req.user.id,
+        group_id: id,
+        role: ['member', 'admin'],
+      },
+    });
+    if (!membership) return res.status(403).json({ message: 'You are not a member of this group' });
+
+    await membership.destroy();
+
+    res.json({ message: 'You have left the group successfully' });
+  } catch (error) {
     res.status(500).json({ message: error.message });
   }
 };
@@ -290,6 +416,12 @@ const startCycle = async (req, res) => {
       return res.status(400).json({ message: 'An active cycle already exists' });
     }
 
+    // Activate all members (set active_in_cycle = true, has_won = false)
+    await Membership.update(
+      { active_in_cycle: true, has_won: false },
+      { where: { group_id: id, role: ['member', 'admin'] }, transaction: t }
+    );
+
     const members = await Membership.findAll({
       where: { group_id: id, role: ['member', 'admin'] },
     });
@@ -298,13 +430,6 @@ const startCycle = async (req, res) => {
     if (totalMembers < 2) {
       return res.status(400).json({ message: 'Group needs at least 2 members to start a cycle' });
     }
-
-    await group.update({ status: 'closed' }, { transaction: t });
-
-    await Membership.update(
-      { has_won: false, active_in_cycle: true },
-      { where: { group_id: id }, transaction: t }
-    );
 
     const lastCycle = await Cycle.findOne({
       where: { group_id: id },
@@ -374,6 +499,31 @@ const drawWinner = async (req, res) => {
       return res.status(400).json({ message: 'All rounds have been completed' });
     }
 
+    // Ensure all active members have contributed
+    const activeMembers = await Membership.findAll({
+      where: { group_id: id, active_in_cycle: true, role: ['member', 'admin'] },
+      include: [{ model: User, attributes: ['id', 'full_name'] }],
+    });
+
+    const currentRound = cycle.current_round;
+
+    for (const member of activeMembers) {
+      const contribution = await Contribution.findOne({
+        where: {
+          user_id: member.user_id,
+          group_id: id,
+          cycle_id: cycle.id,
+          round_number: currentRound,
+          status: 'paid',
+        },
+      });
+      if (!contribution) {
+        return res.status(400).json({
+          message: `Member ${member.User?.full_name || member.user_id} has not contributed for Round ${currentRound}`,
+        });
+      }
+    }
+
     const round = await Round.findOne({
       where: { cycle_id: cycle.id, round_number: cycle.current_round },
     });
@@ -441,7 +591,6 @@ const drawWinner = async (req, res) => {
         status: 'completed',
         completed_at: new Date(),
       }, { transaction: t });
-      await group.update({ status: 'completed' }, { transaction: t });
     }
 
     await t.commit();
@@ -473,6 +622,7 @@ const getCycleStatus = async (req, res) => {
             { model: User, as: 'winner', attributes: ['id', 'full_name'] },
             { model: User, as: 'fixedWinner', attributes: ['id', 'full_name'] },
           ],
+          order: [['round_number', 'ASC']],
         },
       ],
       order: [[{ model: Round }, 'round_number', 'ASC']],
@@ -518,7 +668,7 @@ const endCycle = async (req, res) => {
     if (action === 'reform') {
       await Membership.update(
         { has_won: false },
-        { where: { group_id: id }, transaction: t }
+        { where: { group_id: id, role: ['member', 'admin'] }, transaction: t }
       );
       await cycle.update({
         status: 'completed',
@@ -536,16 +686,18 @@ const endCycle = async (req, res) => {
         status: 'active',
       }, { transaction: t });
 
-      await group.update({ status: 'closed' }, { transaction: t });
+      await Membership.update(
+        { active_in_cycle: true, has_won: false },
+        { where: { group_id: id, role: ['member', 'admin'] }, transaction: t }
+      );
 
       await t.commit();
-      res.json({ message: 'Cycle reformed successfully' });
+      res.json({ message: 'Cycle reformed and new cycle started successfully' });
     } else if (action === 'dismantle') {
       await cycle.update({
         status: 'completed',
         completed_at: new Date(),
       }, { transaction: t });
-      await group.update({ status: 'cancelled' }, { transaction: t });
       await t.commit();
       res.json({ message: 'Cycle dismantled successfully' });
     } else {
@@ -567,8 +719,10 @@ module.exports = {
   getGroup,
   requestJoin,
   handleRequest,
-  getPendingRequests,   // <-- NEW
+  getPendingRequests,
   inviteUser,
+  contribute,
+  leaveGroup,
   startCycle,
   drawWinner,
   getCycleStatus,

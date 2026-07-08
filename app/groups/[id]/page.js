@@ -6,6 +6,7 @@ import Link from 'next/link'
 import RequestList from '../../components/RequestList'
 import InviteModal from '../../components/InviteModal'
 import CycleStatus from '../../components/CycleStatus'
+import ContributionModal from '../../components/ContributionModal'
 import { groupService } from '../../services/groupService'
 
 export default function GroupDetailPage() {
@@ -17,8 +18,10 @@ export default function GroupDetailPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [membershipStatus, setMembershipStatus] = useState(null)
+  const [currentMembership, setCurrentMembership] = useState(null)
   const [isCreator, setIsCreator] = useState(false)
   const [showInviteModal, setShowInviteModal] = useState(false)
+  const [showContributionModal, setShowContributionModal] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
   const [currentUser, setCurrentUser] = useState(null)
   const [members, setMembers] = useState([])
@@ -43,7 +46,10 @@ export default function GroupDetailPage() {
 
       if (currentUser && data.Memberships) {
         const membership = data.Memberships.find(m => m.user_id === currentUser.id)
-        if (membership) setMembershipStatus(membership.role)
+        if (membership) {
+          setMembershipStatus(membership.role)
+          setCurrentMembership(membership)
+        }
       }
 
       setMembers(data.Memberships || [])
@@ -90,6 +96,7 @@ export default function GroupDetailPage() {
     try {
       await groupService.leaveGroup(groupId)
       setMembershipStatus(null)
+      setCurrentMembership(null)
       alert('You have left the group.')
       router.push('/groups')
     } catch (err) {
@@ -129,6 +136,14 @@ export default function GroupDetailPage() {
   const currentRound = activeCycle?.current_round || 1
   const totalRounds = activeCycle?.total_rounds || group.max_members
 
+  const totalSaved = contributions.reduce((sum, c) => {
+    const amount = parseFloat(c.amount) || 0
+    return sum + amount
+  }, 0)
+
+  const memberCount = members.filter(m => m.role === 'member' || m.role === 'admin').length
+  const isFull = memberCount >= group.max_members
+
   return (
     <div className="max-w-5xl mx-auto px-4 py-8">
       <div className="flex items-center gap-2 text-sm text-gray-400 mb-6">
@@ -147,9 +162,6 @@ export default function GroupDetailPage() {
               <span className={`badge ${group.privacy === 'public' ? 'badge-open' : 'badge-pending'}`}>
                 {group.privacy === 'public' ? '🌐 Public' : '🔒 Private'}
               </span>
-              <span className={`badge ${group.status === 'open' ? 'badge-open' : group.status === 'closed' ? 'badge-pending' : group.status === 'completed' ? 'badge-open' : 'badge-pending'}`}>
-                {group.status}
-              </span>
             </div>
             <p className="text-gray-400">{group.description}</p>
             <div className="flex flex-wrap gap-2 mt-3">
@@ -166,7 +178,7 @@ export default function GroupDetailPage() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6 pt-6 border-t border-[#1a2f57]">
           <div>
             <p className="text-gray-400 text-xs uppercase tracking-wider">Members</p>
-            <p className="text-2xl font-bold">{members.filter(m => m.role === 'member' || m.role === 'admin').length}/{group.max_members}</p>
+            <p className="text-2xl font-bold">{memberCount}/{group.max_members}</p>
           </div>
           <div>
             <p className="text-gray-400 text-xs uppercase tracking-wider">Contribution</p>
@@ -174,7 +186,7 @@ export default function GroupDetailPage() {
           </div>
           <div>
             <p className="text-gray-400 text-xs uppercase tracking-wider">Total Saved</p>
-            <p className="text-2xl font-bold text-[#c9a84c]">ETB {contributions.reduce((sum, c) => sum + c.amount, 0)}</p>
+            <p className="text-2xl font-bold text-[#c9a84c]">ETB {totalSaved.toFixed(2)}</p>
           </div>
           <div>
             <p className="text-gray-400 text-xs uppercase tracking-wider">Progress</p>
@@ -193,24 +205,60 @@ export default function GroupDetailPage() {
         </div>
 
         <div className="mt-6 pt-6 border-t border-[#1a2f57] flex flex-wrap gap-3">
-          {!isCreator && membershipStatus === 'member' && (
+          {(membershipStatus === 'member' || membershipStatus === 'admin') && currentMembership?.active_in_cycle && (
             <>
-              <button className="btn-primary">💰 Make Contribution</button>
+              <button onClick={() => setShowContributionModal(true)} className="btn-primary">
+                💰 Make Contribution
+              </button>
               <button onClick={handleLeave} className="btn-danger text-sm">Leave Group</button>
             </>
           )}
-          {!isCreator && membershipStatus === 'pending' && (
+          {(membershipStatus === 'member' || membershipStatus === 'admin') && !currentMembership?.active_in_cycle && (
+            <>
+              <button disabled className="btn-secondary text-sm opacity-50 cursor-not-allowed">
+                ⏳ Waiting for next cycle to contribute
+              </button>
+              <button onClick={handleLeave} className="btn-danger text-sm">Leave Group</button>
+            </>
+          )}
+
+          {membershipStatus === 'pending' && (
             <button disabled className="btn-secondary text-sm">⏳ Awaiting Approval</button>
           )}
-          {!isCreator && membershipStatus === 'invited' && (
+
+          {membershipStatus === 'invited' && (
             <button onClick={handleJoin} className="btn-primary text-sm">✅ Accept Invitation</button>
           )}
-          {!isCreator && !membershipStatus && group.privacy === 'public' && group.status === 'open' && (
-            <button onClick={() => { const message = prompt('Optional: Why do you want to join this group?'); handleJoinRequest(message) }} className="btn-primary text-sm">Request to Join</button>
+
+          {!membershipStatus && (
+            <>
+              {group.privacy === 'public' && (
+                <>
+                  {isFull ? (
+                    <button disabled className="btn-secondary text-sm opacity-50 cursor-not-allowed">
+                      🚫 Group is full
+                    </button>
+                  ) : (
+                    <button 
+                      onClick={() => { 
+                        const message = prompt('Optional: Why do you want to join this group?'); 
+                        handleJoinRequest(message); 
+                      }} 
+                      className="btn-primary text-sm"
+                    >
+                      Request to Join
+                    </button>
+                  )}
+                </>
+              )}
+              {group.privacy === 'private' && (
+                <button disabled className="btn-secondary text-sm opacity-50 cursor-not-allowed">
+                  🔒 Private group – invite only
+                </button>
+              )}
+            </>
           )}
-          {!isCreator && !membershipStatus && group.privacy === 'private' && (
-            <span className="text-gray-400 text-sm">🔒 Private group - invitation required</span>
-          )}
+
           {isCreator && group.privacy === 'private' && (
             <button onClick={() => setShowInviteModal(true)} className="btn-primary">+ Invite Members</button>
           )}
@@ -231,6 +279,8 @@ export default function GroupDetailPage() {
                       {member.role === 'admin' && <span className="text-[10px] text-[#c9a84c]">⭐ Admin</span>}
                       {member.role === 'pending' && <span className="text-[10px] text-yellow-400">⏳ Pending</span>}
                       {member.role === 'invited' && <span className="text-[10px] text-blue-400">📨 Invited</span>}
+                      {member.role === 'member' && !member.active_in_cycle && <span className="text-[10px] text-gray-400">(Next cycle)</span>}
+                      {member.role === 'admin' && !member.active_in_cycle && <span className="text-[10px] text-gray-400">(Next cycle)</span>}
                     </div>
                   </div>
                   {member.role === 'admin' && <span className="text-[#c9a84c] text-xs">⭐</span>}
@@ -284,7 +334,7 @@ export default function GroupDetailPage() {
                       <tr key={item.id} className="border-b border-[#1a2f57] last:border-0">
                         <td className="py-3 px-2 text-sm">{item.User?.full_name || 'User'}</td>
                         <td className="py-3 px-2 text-sm text-gray-400">Round {item.round_number}</td>
-                        <td className="py-3 px-2 text-sm text-[#c9a84c]">ETB {item.amount}</td>
+                        <td className="py-3 px-2 text-sm text-[#c9a84c]">ETB {parseFloat(item.amount || 0).toFixed(2)}</td>
                         <td className="py-3 px-2"><span className={`badge ${item.status === 'paid' ? 'badge-open' : 'badge-pending'}`}>{item.status}</span></td>
                       </tr>
                     ))
@@ -298,12 +348,23 @@ export default function GroupDetailPage() {
             <RequestList groupId={groupId} isCreator={isCreator} onUpdate={() => setRefreshKey(prev => prev + 1)} />
           )}
 
-          <CycleStatus groupId={groupId} isCreator={isCreator} />
+          <CycleStatus groupId={groupId} isCreator={isCreator} onUpdate={() => setRefreshKey(prev => prev + 1)} />
         </div>
       </div>
 
       {showInviteModal && (
         <InviteModal groupId={groupId} onClose={() => setShowInviteModal(false)} onInvite={() => setRefreshKey(prev => prev + 1)} />
+      )}
+
+      {showContributionModal && (
+        <ContributionModal
+          groupId={groupId}
+          contributionAmount={group.contribution_amount}
+          onClose={() => setShowContributionModal(false)}
+          onSuccess={() => {
+            setRefreshKey(prev => prev + 1)
+          }}
+        />
       )}
     </div>
   )

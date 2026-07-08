@@ -6,8 +6,10 @@ const {
   getGroup,
   requestJoin,
   handleRequest,
-  getPendingRequests,   // <-- ADDED
+  getPendingRequests,
   inviteUser,
+  contribute,
+  leaveGroup,
   startCycle,
   drawWinner,
   getCycleStatus,
@@ -17,14 +19,16 @@ const { protect } = require('../middleware/auth');
 
 router.post('/', protect, createGroup);
 router.get('/', getGroups);
-
-// ===== PENDING REQUESTS ROUTE =====
-router.get('/:id/requests', protect, getPendingRequests);   // <-- ADDED (BEFORE :id catch-all)
-
+router.get('/:id/requests', protect, getPendingRequests);
 router.get('/:id', getGroup);
+
 router.post('/:id/request-join', protect, requestJoin);
 router.put('/:id/requests/:userId', protect, handleRequest);
 router.post('/:id/invite', protect, inviteUser);
+
+router.post('/:id/contribute', protect, contribute);
+router.delete('/:id/leave', protect, leaveGroup);
+
 router.post('/:id/cycle/start', protect, startCycle);
 router.post('/:id/cycle/draw', protect, drawWinner);
 router.get('/:id/cycle/status', protect, getCycleStatus);
