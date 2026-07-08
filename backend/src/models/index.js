@@ -5,8 +5,9 @@ const Membership = require('./Membership');
 const Contribution = require('./Contribution');
 const Round = require('./Round');
 const Invite = require('./Invite');
+const Cycle = require('./Cycle');
+const RoundWinner = require('./RoundWinner');
 
-// Define associations
 User.hasMany(Group, { foreignKey: 'created_by', as: 'createdGroups' });
 Group.belongsTo(User, { foreignKey: 'created_by', as: 'creator' });
 
@@ -31,9 +32,17 @@ Group.hasMany(Contribution, { foreignKey: 'group_id' });
 Contribution.belongsTo(User, { foreignKey: 'user_id' });
 Contribution.belongsTo(Group, { foreignKey: 'group_id' });
 
-Group.hasMany(Round, { foreignKey: 'group_id' });
-Round.belongsTo(Group, { foreignKey: 'group_id' });
+Group.hasMany(Cycle, { foreignKey: 'group_id' });
+Cycle.belongsTo(Group, { foreignKey: 'group_id' });
+
+Cycle.hasMany(Round, { foreignKey: 'cycle_id' });
+Round.belongsTo(Cycle, { foreignKey: 'cycle_id' });
 Round.belongsTo(User, { foreignKey: 'winner_id', as: 'winner' });
+Round.belongsTo(User, { foreignKey: 'fixed_winner_id', as: 'fixedWinner' });
+
+Cycle.hasMany(RoundWinner, { foreignKey: 'cycle_id' });
+RoundWinner.belongsTo(Cycle, { foreignKey: 'cycle_id' });
+RoundWinner.belongsTo(User, { foreignKey: 'winner_id', as: 'winner' });
 
 Group.hasMany(Invite, { foreignKey: 'group_id' });
 User.hasMany(Invite, { foreignKey: 'invited_user_id', as: 'invites' });
@@ -50,4 +59,6 @@ module.exports = {
   Contribution,
   Round,
   Invite,
+  Cycle,
+  RoundWinner,
 };

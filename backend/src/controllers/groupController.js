@@ -1,12 +1,14 @@
-const { Group, Membership, User, Contribution, Round } = require('../models');
+const { Group, Membership, User, Contribution, Round, Invite, Cycle, RoundWinner } = require('../models');
 const { sequelize } = require('../config/database');
+const { Op } = require('sequelize');
 
-// @desc    Create a group
-// @route   POST /api/groups
-// @access  Private
+// ===============================
+// GROUP CRUD
+// ===============================
+
 const createGroup = async (req, res) => {
   try {
-    const { name, description, category, privacy, contribution_amount, frequency, max_members, total_rounds } = req.body;
+    const { name, description, category, privacy, contribution_amount, frequency, max_members } = req.body;
 
     const group = await Group.create({
       name,
@@ -16,11 +18,10 @@ const createGroup = async (req, res) => {
       contribution_amount,
       frequency: frequency || 'monthly',
       max_members: max_members || 10,
-      total_rounds: total_rounds || 12,
+      status: 'open',
       created_by: req.user.id,
     });
 
-    // Add creator as admin
     await Membership.create({
       user_id: req.user.id,
       group_id: group.id,
@@ -36,17 +37,12 @@ const createGroup = async (req, res) => {
   }
 };
 
-// @desc    Get all groups
-// @route   GET /api/groups
-// @access  Public
 const getGroups = async (req, res) => {
   try {
     const { search, category, privacy, status } = req.query;
 
     const where = {};
-    if (search) {
-      where.name = { [Op.iLike]: `%${search}%` };
-    }
+    if (search) where.name = { [Op.iLike]: `%${search}%` };
     if (category) where.category = category;
     if (privacy) where.privacy = privacy;
     if (status) where.status = status;
@@ -54,11 +50,8 @@ const getGroups = async (req, res) => {
     const groups = await Group.findAll({
       where,
       include: [
-        {
-          model: User,
-          as: 'creator',
-          attributes: ['id', 'full_name', 'email'],
-        },
+        { model: User, as: 'creator', attributes: ['id', 'full_name', 'email'] },
+        { model: Membership, attributes: ['user_id', 'role'] },
       ],
       order: [['created_at', 'DESC']],
     });
@@ -69,73 +62,65 @@ const getGroups = async (req, res) => {
   }
 };
 
-// @desc    Get group by ID
-// @route   GET /api/groups/:id
-// @access  Public
 const getGroup = async (req, res) => {
   try {
     const group = await Group.findByPk(req.params.id, {
       include: [
-        {
-          model: User,
-          as: 'creator',
-          attributes: ['id', 'full_name', 'email'],
-        },
+        { model: User, as: 'creator', attributes: ['id', 'full_name', 'email'] },
         {
           model: Membership,
+          include: [{ model: User, attributes: ['id', 'full_name', 'email', 'phone'] }],
+        },
+        {
+          model: Cycle,
+          where: { status: 'active' },
+          required: false,
           include: [
             {
-              model: User,
-              attributes: ['id', 'full_name', 'email', 'phone'],
+              model: Round,
+              include: [
+                { model: User, as: 'winner', attributes: ['id', 'full_name'] },
+                { model: User, as: 'fixedWinner', attributes: ['id', 'full_name'] },
+              ],
             },
           ],
         },
         {
           model: Contribution,
-          include: [
-            {
-              model: User,
-              attributes: ['id', 'full_name'],
-            },
-          ],
-        },
-        {
-          model: Round,
+          include: [{ model: User, attributes: ['id', 'full_name'] }],
+          limit: 10,
+          order: [['created_at', 'DESC']],
         },
       ],
     });
 
-    if (!group) {
-      return res.status(404).json({ message: 'Group not found' });
-    }
-
+    if (!group) return res.status(404).json({ message: 'Group not found' });
     res.json(group);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 };
 
-// @desc    Request to join a group (public groups)
-// @route   POST /api/groups/:id/request-join
-// @access  Private
+// ===============================
+// JOIN REQUESTS
+// ===============================
+
 const requestJoin = async (req, res) => {
   const t = await sequelize.transaction();
   try {
     const group = await Group.findByPk(req.params.id);
-    if (!group) {
-      return res.status(404).json({ message: 'Group not found' });
+    if (!group) return res.status(404).json({ message: 'Group not found' });
+
+    if (group.status === 'closed' || group.status === 'completed' || group.status === 'cancelled') {
+      return res.status(400).json({ message: 'Group is not accepting new members' });
     }
 
-    if (group.privacy !== 'public') {
+    if (group.privacy === 'private') {
       return res.status(400).json({ message: 'Private groups require an invitation' });
     }
 
-    // Check if already a member or pending
     const existing = await Membership.findOne({
-      where: {
-        user_id: req.user.id,
-        group_id: group.id,
-      },
+      where: { user_id: req.user.id, group_id: group.id },
     });
 
     if (existing) {
@@ -147,7 +132,6 @@ const requestJoin = async (req, res) => {
       }
     }
 
-    // Create pending membership
     await Membership.create({
       user_id: req.user.id,
       group_id: group.id,
@@ -162,9 +146,6 @@ const requestJoin = async (req, res) => {
   }
 };
 
-// @desc    Approve/Deny join request (creator only)
-// @route   PUT /api/groups/:id/requests/:userId
-// @access  Private (creator only)
 const handleRequest = async (req, res) => {
   const t = await sequelize.transaction();
   try {
@@ -172,26 +153,17 @@ const handleRequest = async (req, res) => {
     const { action } = req.body;
 
     const group = await Group.findByPk(id);
-    if (!group) {
-      return res.status(404).json({ message: 'Group not found' });
-    }
+    if (!group) return res.status(404).json({ message: 'Group not found' });
 
-    // Check if user is creator
     if (group.created_by !== req.user.id) {
       return res.status(403).json({ message: 'Only the group creator can manage requests' });
     }
 
     const membership = await Membership.findOne({
-      where: {
-        user_id: userId,
-        group_id: id,
-        role: 'pending',
-      },
+      where: { user_id: userId, group_id: id, role: 'pending' },
     });
 
-    if (!membership) {
-      return res.status(404).json({ message: 'No pending request found' });
-    }
+    if (!membership) return res.status(404).json({ message: 'No pending request found' });
 
     if (action === 'approve') {
       await membership.update({ role: 'member' }, { transaction: t });
@@ -210,13 +182,13 @@ const handleRequest = async (req, res) => {
   }
 };
 
-// @desc    Invite user to private group
-// @route   POST /api/groups/:id/invite
-// @access  Private (creator only)
-const inviteUser = async (req, res) => {
+// ===============================
+// PENDING REQUESTS (NEW)
+// ===============================
+
+const getPendingRequests = async (req, res) => {
   try {
     const { id } = req.params;
-    const { email } = req.body;
 
     const group = await Group.findByPk(id);
     if (!group) {
@@ -224,20 +196,42 @@ const inviteUser = async (req, res) => {
     }
 
     if (group.created_by !== req.user.id) {
+      return res.status(403).json({ message: 'Only the group creator can view pending requests' });
+    }
+
+    const pendingMembers = await Membership.findAll({
+      where: { group_id: id, role: 'pending' },
+      include: [{ model: User, attributes: ['id', 'full_name', 'email'] }],
+    });
+
+    res.json(pendingMembers);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// ===============================
+// INVITES
+// ===============================
+
+const inviteUser = async (req, res) => {
+  const t = await sequelize.transaction();
+  try {
+    const { id } = req.params;
+    const { email } = req.body;
+
+    const group = await Group.findByPk(id);
+    if (!group) return res.status(404).json({ message: 'Group not found' });
+
+    if (group.created_by !== req.user.id) {
       return res.status(403).json({ message: 'Only the group creator can invite members' });
     }
 
     const user = await User.findOne({ where: { email } });
-    if (!user) {
-      return res.status(404).json({ message: 'User not found' });
-    }
+    if (!user) return res.status(404).json({ message: 'User not found' });
 
-    // Check if already invited or member
     const existing = await Membership.findOne({
-      where: {
-        user_id: user.id,
-        group_id: id,
-      },
+      where: { user_id: user.id, group_id: id },
     });
 
     if (existing) {
@@ -252,27 +246,320 @@ const inviteUser = async (req, res) => {
       }
     }
 
-    // Create invite
     const invite = await Invite.create({
       group_id: id,
       invited_user_id: user.id,
       invited_by: req.user.id,
-    });
+    }, { transaction: t });
 
     await Membership.create({
       user_id: user.id,
       group_id: id,
       role: 'invited',
+    }, { transaction: t });
+
+    await t.commit();
+    res.status(201).json({ message: 'Invitation sent successfully', invite });
+  } catch (error) {
+    await t.rollback();
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// ===============================
+// EQUIB CYCLE MANAGEMENT
+// ===============================
+
+const startCycle = async (req, res) => {
+  const t = await sequelize.transaction();
+  try {
+    const { id } = req.params;
+    const { start_date, winOrder } = req.body;
+
+    const group = await Group.findByPk(id);
+    if (!group) return res.status(404).json({ message: 'Group not found' });
+
+    if (group.created_by !== req.user.id) {
+      return res.status(403).json({ message: 'Only the group creator can start a cycle' });
+    }
+
+    const activeCycle = await Cycle.findOne({
+      where: { group_id: id, status: 'active' },
+    });
+    if (activeCycle) {
+      return res.status(400).json({ message: 'An active cycle already exists' });
+    }
+
+    const members = await Membership.findAll({
+      where: { group_id: id, role: ['member', 'admin'] },
+    });
+    const totalMembers = members.length;
+
+    if (totalMembers < 2) {
+      return res.status(400).json({ message: 'Group needs at least 2 members to start a cycle' });
+    }
+
+    await group.update({ status: 'closed' }, { transaction: t });
+
+    await Membership.update(
+      { has_won: false, active_in_cycle: true },
+      { where: { group_id: id }, transaction: t }
+    );
+
+    const lastCycle = await Cycle.findOne({
+      where: { group_id: id },
+      order: [['cycle_number', 'DESC']],
+    });
+    const cycleNumber = lastCycle ? lastCycle.cycle_number + 1 : 1;
+
+    const cycle = await Cycle.create({
+      group_id: id,
+      cycle_number: cycleNumber,
+      start_date: start_date || new Date(),
+      total_rounds: totalMembers,
+      current_round: 1,
+      status: 'active',
+    }, { transaction: t });
+
+    if (winOrder && Array.isArray(winOrder) && winOrder.length === totalMembers) {
+      for (let i = 0; i < winOrder.length; i++) {
+        await Round.create({
+          cycle_id: cycle.id,
+          round_number: i + 1,
+          fixed_winner_id: winOrder[i],
+          is_fixed: true,
+          amount: totalMembers * group.contribution_amount,
+          status: 'pending',
+        }, { transaction: t });
+      }
+    } else {
+      for (let i = 0; i < totalMembers; i++) {
+        await Round.create({
+          cycle_id: cycle.id,
+          round_number: i + 1,
+          fixed_winner_id: null,
+          is_fixed: false,
+          amount: totalMembers * group.contribution_amount,
+          status: 'pending',
+        }, { transaction: t });
+      }
+    }
+
+    await t.commit();
+    res.status(201).json({ message: 'Cycle started successfully', cycle });
+  } catch (error) {
+    await t.rollback();
+    res.status(500).json({ message: error.message });
+  }
+};
+
+const drawWinner = async (req, res) => {
+  const t = await sequelize.transaction();
+  try {
+    const { id } = req.params;
+
+    const group = await Group.findByPk(id);
+    if (!group) return res.status(404).json({ message: 'Group not found' });
+
+    if (group.created_by !== req.user.id) {
+      return res.status(403).json({ message: 'Only the group creator can draw winners' });
+    }
+
+    const cycle = await Cycle.findOne({
+      where: { group_id: id, status: 'active' },
+    });
+    if (!cycle) return res.status(404).json({ message: 'No active cycle found' });
+
+    if (cycle.current_round > cycle.total_rounds) {
+      return res.status(400).json({ message: 'All rounds have been completed' });
+    }
+
+    const round = await Round.findOne({
+      where: { cycle_id: cycle.id, round_number: cycle.current_round },
+    });
+    if (!round) return res.status(404).json({ message: 'Round not found' });
+
+    let winner;
+
+    if (round.is_fixed && round.fixed_winner_id) {
+      const fixedWinner = await User.findByPk(round.fixed_winner_id);
+      if (!fixedWinner) {
+        return res.status(404).json({ message: 'Fixed winner not found' });
+      }
+      winner = await Membership.findOne({
+        where: { user_id: round.fixed_winner_id, group_id: id },
+        include: [{ model: User, attributes: ['id', 'full_name'] }],
+      });
+      if (!winner) {
+        return res.status(400).json({ message: 'Fixed winner is not a member of this group' });
+      }
+    } else {
+      const eligibleMembers = await Membership.findAll({
+        where: {
+          group_id: id,
+          has_won: false,
+          active_in_cycle: true,
+          role: ['member', 'admin'],
+        },
+        include: [{ model: User, attributes: ['id', 'full_name'] }],
+      });
+
+      if (eligibleMembers.length === 0) {
+        return res.status(400).json({ message: 'No eligible members left for this round' });
+      }
+
+      winner = eligibleMembers[Math.floor(Math.random() * eligibleMembers.length)];
+    }
+
+    await winner.update({ has_won: true }, { transaction: t });
+
+    const totalActiveMembers = await Membership.count({
+      where: { group_id: id, active_in_cycle: true, role: ['member', 'admin'] },
+    });
+    const pot = totalActiveMembers * group.contribution_amount;
+
+    await round.update({
+      winner_id: winner.user_id,
+      amount: pot,
+      status: 'paid',
+      paid_at: new Date(),
+    }, { transaction: t });
+
+    await RoundWinner.create({
+      cycle_id: cycle.id,
+      round_number: cycle.current_round,
+      winner_id: winner.user_id,
+      amount: pot,
+    }, { transaction: t });
+
+    await cycle.update({
+      current_round: cycle.current_round + 1,
+    }, { transaction: t });
+
+    if (cycle.current_round > cycle.total_rounds) {
+      await cycle.update({
+        status: 'completed',
+        completed_at: new Date(),
+      }, { transaction: t });
+      await group.update({ status: 'completed' }, { transaction: t });
+    }
+
+    await t.commit();
+
+    res.json({
+      message: `Winner drawn: ${winner.User.full_name}`,
+      winner: winner.User,
+      remaining: await Membership.count({
+        where: { group_id: id, has_won: false, active_in_cycle: true, role: ['member', 'admin'] },
+      }),
+      cycleCompleted: cycle.current_round > cycle.total_rounds,
+    });
+  } catch (error) {
+    await t.rollback();
+    res.status(500).json({ message: error.message });
+  }
+};
+
+const getCycleStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const cycle = await Cycle.findOne({
+      where: { group_id: id, status: 'active' },
+      include: [
+        {
+          model: Round,
+          include: [
+            { model: User, as: 'winner', attributes: ['id', 'full_name'] },
+            { model: User, as: 'fixedWinner', attributes: ['id', 'full_name'] },
+          ],
+        },
+      ],
+      order: [[{ model: Round }, 'round_number', 'ASC']],
     });
 
-    res.status(201).json({
-      message: 'Invitation sent successfully',
-      invite,
+    if (!cycle) {
+      return res.json({ message: 'No active cycle', cycle: null });
+    }
+
+    const members = await Membership.findAll({
+      where: { group_id: id, role: ['member', 'admin'] },
+      include: [{ model: User, attributes: ['id', 'full_name', 'email'] }],
+    });
+
+    res.json({
+      cycle,
+      members,
+      remaining: members.filter(m => !m.has_won).length,
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 };
+
+const endCycle = async (req, res) => {
+  const t = await sequelize.transaction();
+  try {
+    const { id } = req.params;
+    const { action } = req.body;
+
+    const group = await Group.findByPk(id);
+    if (!group) return res.status(404).json({ message: 'Group not found' });
+
+    if (group.created_by !== req.user.id) {
+      return res.status(403).json({ message: 'Only the group creator can end a cycle' });
+    }
+
+    const cycle = await Cycle.findOne({
+      where: { group_id: id, status: 'active' },
+    });
+    if (!cycle) return res.status(404).json({ message: 'No active cycle found' });
+
+    if (action === 'reform') {
+      await Membership.update(
+        { has_won: false },
+        { where: { group_id: id }, transaction: t }
+      );
+      await cycle.update({
+        status: 'completed',
+        completed_at: new Date(),
+      }, { transaction: t });
+
+      const totalMembers = await Membership.count({
+        where: { group_id: id, role: ['member', 'admin'] },
+      });
+      await Cycle.create({
+        group_id: id,
+        cycle_number: cycle.cycle_number + 1,
+        start_date: new Date(),
+        total_rounds: totalMembers,
+        status: 'active',
+      }, { transaction: t });
+
+      await group.update({ status: 'closed' }, { transaction: t });
+
+      await t.commit();
+      res.json({ message: 'Cycle reformed successfully' });
+    } else if (action === 'dismantle') {
+      await cycle.update({
+        status: 'completed',
+        completed_at: new Date(),
+      }, { transaction: t });
+      await group.update({ status: 'cancelled' }, { transaction: t });
+      await t.commit();
+      res.json({ message: 'Cycle dismantled successfully' });
+    } else {
+      res.status(400).json({ message: 'Invalid action. Use "reform" or "dismantle"' });
+    }
+  } catch (error) {
+    await t.rollback();
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// ===============================
+// EXPORTS
+// ===============================
 
 module.exports = {
   createGroup,
@@ -280,5 +567,10 @@ module.exports = {
   getGroup,
   requestJoin,
   handleRequest,
+  getPendingRequests,   // <-- NEW
   inviteUser,
+  startCycle,
+  drawWinner,
+  getCycleStatus,
+  endCycle,
 };

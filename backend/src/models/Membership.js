@@ -19,6 +19,14 @@ const Membership = sequelize.define('Membership', {
     type: DataTypes.ENUM('admin', 'member', 'pending', 'invited'),
     defaultValue: 'member',
   },
+  has_won: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false,
+  },
+  active_in_cycle: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: true,
+  },
   joined_at: {
     type: DataTypes.DATE,
     defaultValue: DataTypes.NOW,

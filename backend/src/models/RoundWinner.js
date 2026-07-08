@@ -1,21 +1,11 @@
 const { DataTypes } = require('sequelize');
 const { sequelize } = require('../config/database');
 
-const Contribution = sequelize.define('Contribution', {
+const RoundWinner = sequelize.define('RoundWinner', {
   id: {
     type: DataTypes.INTEGER,
     primaryKey: true,
     autoIncrement: true,
-  },
-  user_id: {
-    type: DataTypes.INTEGER,
-    allowNull: false,
-    references: { model: 'users', key: 'id' },
-  },
-  group_id: {
-    type: DataTypes.INTEGER,
-    allowNull: false,
-    references: { model: 'groups', key: 'id' },
   },
   cycle_id: {
     type: DataTypes.INTEGER,
@@ -26,31 +16,27 @@ const Contribution = sequelize.define('Contribution', {
     type: DataTypes.INTEGER,
     allowNull: false,
   },
+  winner_id: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    references: { model: 'users', key: 'id' },
+  },
   amount: {
     type: DataTypes.DECIMAL(10, 2),
     allowNull: false,
-    validate: { min: 0 },
   },
   status: {
-    type: DataTypes.ENUM('pending', 'paid', 'failed', 'refunded'),
+    type: DataTypes.ENUM('pending', 'paid'),
     defaultValue: 'pending',
-  },
-  payment_method: {
-    type: DataTypes.STRING(50),
-    allowNull: true,
-  },
-  payment_reference: {
-    type: DataTypes.STRING(255),
-    allowNull: true,
   },
   paid_at: {
     type: DataTypes.DATE,
     allowNull: true,
   },
 }, {
-  tableName: 'contributions',
+  tableName: 'round_winners',
   timestamps: true,
   underscored: true,
 });
 
-module.exports = Contribution;
+module.exports = RoundWinner;

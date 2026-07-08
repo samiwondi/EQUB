@@ -19,6 +19,7 @@ async function seedTestUsers() {
     const testUsers = [];
     for (let i = 1; i <= 10; i++) {
       const user = await User.create({
+        fayda_id: `FID-00${i}`,
         email: `user${i}@test.com`,
         password_hash: 'password123',
         full_name: `Test User ${i}`,

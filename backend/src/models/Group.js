@@ -29,7 +29,7 @@ const Group = sequelize.define('Group', {
     validate: { min: 0 },
   },
   frequency: {
-    type: DataTypes.ENUM('weekly', 'biweekly', 'monthly'),
+    type: DataTypes.ENUM('daily', 'weekly', 'biweekly', 'monthly'),
     defaultValue: 'monthly',
   },
   max_members: {
@@ -37,18 +37,9 @@ const Group = sequelize.define('Group', {
     defaultValue: 10,
     validate: { min: 2 },
   },
-  total_rounds: {
-    type: DataTypes.INTEGER,
-    defaultValue: 12,
-    validate: { min: 1 },
-  },
-  current_round: {
-    type: DataTypes.INTEGER,
-    defaultValue: 1,
-  },
   status: {
-    type: DataTypes.ENUM('active', 'completed', 'cancelled'),
-    defaultValue: 'active',
+    type: DataTypes.ENUM('open', 'closed', 'completed', 'cancelled'),
+    defaultValue: 'open',
   },
   created_by: {
     type: DataTypes.INTEGER,

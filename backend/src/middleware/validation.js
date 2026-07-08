@@ -20,6 +20,7 @@ const validate = (validations) => {
 
 const userValidation = {
   register: [
+    body('fayda_id').notEmpty().withMessage('Fayda ID is required'),
     body('full_name').notEmpty().withMessage('Full name is required'),
     body('email').isEmail().withMessage('Valid email is required'),
     body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters'),

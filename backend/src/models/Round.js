@@ -7,16 +7,13 @@ const Round = sequelize.define('Round', {
     primaryKey: true,
     autoIncrement: true,
   },
-  group_id: {
+  cycle_id: {
     type: DataTypes.INTEGER,
-    references: { model: 'groups', key: 'id' },
+    allowNull: false,
+    references: { model: 'cycles', key: 'id' },
   },
   round_number: {
     type: DataTypes.INTEGER,
-    allowNull: false,
-  },
-  total_amount: {
-    type: DataTypes.DECIMAL(10, 2),
     allowNull: false,
   },
   winner_id: {
@@ -24,11 +21,24 @@ const Round = sequelize.define('Round', {
     references: { model: 'users', key: 'id' },
     allowNull: true,
   },
+  fixed_winner_id: {
+    type: DataTypes.INTEGER,
+    references: { model: 'users', key: 'id' },
+    allowNull: true,
+  },
+  is_fixed: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false,
+  },
+  amount: {
+    type: DataTypes.DECIMAL(10, 2),
+    allowNull: false,
+  },
   status: {
-    type: DataTypes.ENUM('pending', 'completed', 'cancelled'),
+    type: DataTypes.ENUM('pending', 'paid'),
     defaultValue: 'pending',
   },
-  payout_date: {
+  paid_at: {
     type: DataTypes.DATE,
     allowNull: true,
   },
@@ -37,7 +47,7 @@ const Round = sequelize.define('Round', {
   timestamps: true,
   underscored: true,
   indexes: [
-    { fields: ['group_id', 'round_number'], unique: true },
+    { fields: ['cycle_id', 'round_number'], unique: true },
   ],
 });
 

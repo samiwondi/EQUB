@@ -31,7 +31,7 @@ const Invite = sequelize.define('Invite', {
   },
   expires_at: {
     type: DataTypes.DATE,
-    defaultValue: () => new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+    defaultValue: () => new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
   },
 }, {
   tableName: 'invites',
@@ -39,7 +39,6 @@ const Invite = sequelize.define('Invite', {
   underscored: true,
 });
 
-// Generate unique token before create
 Invite.beforeCreate(async (invite) => {
   if (!invite.token) {
     invite.token = crypto.randomBytes(32).toString('hex');

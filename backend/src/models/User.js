@@ -8,6 +8,11 @@ const User = sequelize.define('User', {
     primaryKey: true,
     autoIncrement: true,
   },
+  fayda_id: {
+    type: DataTypes.STRING(50),
+    allowNull: false,
+    unique: true,
+  },
   email: {
     type: DataTypes.STRING(255),
     allowNull: false,
@@ -52,7 +57,6 @@ const User = sequelize.define('User', {
   underscored: true,
 });
 
-// Hash password before saving
 User.beforeCreate(async (user) => {
   if (user.password_hash) {
     const salt = await bcrypt.genSalt(10);
@@ -67,12 +71,10 @@ User.beforeUpdate(async (user) => {
   }
 });
 
-// Compare password method
 User.prototype.comparePassword = async function(password) {
   return await bcrypt.compare(password, this.password_hash);
 };
 
-// Hide password when sending JSON
 User.prototype.toJSON = function() {
   const values = { ...this.get() };
   delete values.password_hash;
